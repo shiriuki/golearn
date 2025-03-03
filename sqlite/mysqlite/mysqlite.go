@@ -37,43 +37,6 @@ func GetOrderTotal(lines []OrderLine) (orderTotal float64) {
 	return
 }
 
-func FindOrder(orderId int64) (Order, error) {
-	conn, err := openConnection()
-	if err != nil {
-		return Order{}, err
-	}
-	defer conn.Close()
-
-	order := Order{}
-	row := conn.QueryRow("select customer, total from my_order where order_id = ?", orderId)
-	err = row.Scan(&order.Customer, &order.OrderTotal)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return Order{}, errors.New("cant find the order")
-		} else {
-			return Order{}, err
-		}
-	}
-	order.ID = orderId
-
-	rows, err := conn.Query("select product_id, qty, product_sell_unit_price, total from my_order_lines where order_id = ?", orderId)
-	if err != nil {
-		return Order{}, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		line := OrderLine{}
-		err = rows.Scan(&line.ProductId, &line.Qty, &line.ProductSellUnitPrice, &line.LineTotal)
-		if err != nil {
-			return Order{}, err
-		}
-		order.Lines = append(order.Lines, line)
-	}
-
-	return order, nil
-}
-
 // TODO. Just learning, this is NOT transactional
 func AddOrder(order Order) (Order, error) {
 	conn, err := openConnection()
@@ -110,24 +73,100 @@ func AddOrder(order Order) (Order, error) {
 	return order, nil
 }
 
-func ExistOrder(orderId int64) (bool, error) {
+func FindOrder(orderId int64) (Order, error) {
+	conn, err := openConnection()
+	if err != nil {
+		return Order{}, err
+	}
+	defer conn.Close()
+
+	order := Order{}
+	_, err = oneRowQuery(
+		conn, "select customer, total from my_order where order_id = ?", []any{orderId},
+		[]any{&order.Customer, &order.OrderTotal}, true, "cant find the order")
+	if err != nil {
+		return Order{}, err
+	}
+	order.ID = orderId
+
+	rowProcessor := func(currentRow *sql.Rows) (result any, err error) {
+		line := OrderLine{}
+		err = currentRow.Scan(
+			&line.ProductId, &line.Qty, &line.ProductSellUnitPrice, &line.LineTotal)
+		if err != nil {
+			return nil, err
+		}
+		return line, nil
+	}
+	results, err := multiRowQuery(conn, "select product_id, qty, product_sell_unit_price, total from my_order_lines where order_id = ?", []any{orderId}, rowProcessor)
+	if err != nil {
+		return Order{}, err
+	}
+	order.Lines = convertToType[OrderLine](results)
+
+	return order, nil
+}
+
+func ExistOrder(orderId int64) (orderExist bool, err error) {
 	conn, err := openConnection()
 	if err != nil {
 		return false, err
 	}
 	defer conn.Close()
 
-	id := 0
-	row := conn.QueryRow("select order_id from my_order where order_id = ?", orderId)
-	err = row.Scan(&id)
+	return oneRowQuery(
+		conn, "select order_id from my_order where order_id = ?", []any{orderId},
+		[]any{&orderId}, false, "")
+}
+
+func convertToType[T any](input []any) []T {
+	output := make([]T, 0, len(input))
+	for i, _ := range input {
+		obj, isOfType := input[i].(T)
+		if isOfType {
+			output = append(output, obj)
+		}
+	}
+	return output
+}
+
+func multiRowQuery(
+	conn *sql.DB, querySql string, queryParams []any,
+	rowProcessor func(currentRow *sql.Rows) (result any, err error)) (results []any, err error) {
+	rows, err := conn.Query(querySql, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results = []any{}
+	for rows.Next() {
+		result, err := rowProcessor(rows)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+func oneRowQuery(
+	conn *sql.DB, querySql string, queryParams []any, results []any,
+	noRowIsError bool, noRowErrMsg string) (rowFound bool, err error) {
+	row := conn.QueryRow(querySql, queryParams...)
+	err = row.Scan(results...)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return false, nil
+			if noRowIsError {
+				return false, errors.New(noRowErrMsg)
+			} else {
+				return false, nil
+			}
 		} else {
 			return false, err
 		}
 	}
-
 	return true, nil
 }
 
