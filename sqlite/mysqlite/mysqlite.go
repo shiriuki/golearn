@@ -8,7 +8,10 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const CREATE_DB_FILE = "createTables.sql"
+const (
+	CREATE_DB_FILE = "createTables.sql"
+	NOT_AN_ID      = -1
+)
 
 var (
 	tableCreated = false
@@ -29,15 +32,7 @@ type OrderLine struct {
 	LineTotal            float64
 }
 
-func GetOrderTotal(lines []OrderLine) (orderTotal float64) {
-	orderTotal = 0
-	for i := 0; i < len(lines); i++ {
-		orderTotal += lines[i].LineTotal
-	}
-	return
-}
-
-// TODO. Just learning, this is NOT transactional
+// TODO. Just learning, this is NOT transactional, also should use PreparedStatements
 func AddOrder(order Order) (Order, error) {
 	conn, err := openConnection()
 	if err != nil {
@@ -45,26 +40,16 @@ func AddOrder(order Order) (Order, error) {
 	}
 	defer conn.Close()
 
-	res, err := conn.Exec("insert into my_order (customer, total) values (?, ?)",
-		order.Customer,
-		order.OrderTotal)
-	if err != nil {
-		return order, err
-	}
-
-	orderId, err := res.LastInsertId()
+	orderId, err := insertOneRecord(conn, "insert into my_order (customer, total) values (?, ?)",
+		[]any{order.Customer, order.OrderTotal}, true)
 	if err != nil {
 		return order, err
 	}
 	order.ID = orderId
 
 	for _, line := range order.Lines {
-		_, err := conn.Exec("insert into my_order_lines (order_id, product_id, qty, product_sell_unit_price, total) values (?, ?, ?, ?, ?)",
-			order.ID,
-			line.ProductId,
-			line.Qty,
-			line.ProductSellUnitPrice,
-			line.LineTotal)
+		_, err := insertOneRecord(conn, "insert into my_order_lines (order_id, product_id, qty, product_sell_unit_price, total) values (?, ?, ?, ?, ?)",
+			[]any{order.ID, line.ProductId, line.Qty, line.ProductSellUnitPrice, line.LineTotal}, false)
 		if err != nil {
 			return order, err
 		}
@@ -119,6 +104,14 @@ func ExistOrder(orderId int64) (orderExist bool, err error) {
 		[]any{&orderId}, false, "")
 }
 
+func GetOrderTotal(lines []OrderLine) (orderTotal float64) {
+	orderTotal = 0
+	for i := 0; i < len(lines); i++ {
+		orderTotal += lines[i].LineTotal
+	}
+	return
+}
+
 func convertToType[T any](input []any) []T {
 	output := make([]T, 0, len(input))
 	for i, _ := range input {
@@ -128,6 +121,23 @@ func convertToType[T any](input []any) []T {
 		}
 	}
 	return output
+}
+
+func insertOneRecord(conn *sql.DB, insertSql string, insertParams []any,
+	getId bool) (int64, error) {
+	res, err := conn.Exec(insertSql, insertParams...)
+	if err != nil {
+		return NOT_AN_ID, err
+	}
+	if getId {
+		id, err := res.LastInsertId()
+		if err != nil {
+			return NOT_AN_ID, err
+		} else {
+			return id, nil
+		}
+	}
+	return NOT_AN_ID, nil
 }
 
 func multiRowQuery(
