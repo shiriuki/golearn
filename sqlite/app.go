@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
-	"mecc/mysqlite"
+	"mecc/sqlite/mysqlite"
 )
 
 func main() {

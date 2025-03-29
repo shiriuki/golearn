@@ -1,4 +1,4 @@
-module mecc/mysqlite
+module mecc/sqlite
 
 go 1.24.0
 
