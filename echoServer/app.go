@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/semaphore"
@@ -17,10 +18,17 @@ import (
 const MAX_CONCURRENT_CLIENTS = 2
 
 var sem = semaphore.NewWeighted(int64(MAX_CONCURRENT_CLIENTS))
+var wg sync.WaitGroup
 var serverFinished = false
 
 func handleNewConnRequest(conn net.Conn, ctx context.Context, cancelFunc context.CancelFunc) {
+	defer wg.Done()
 	defer conn.Close()
+
+	if serverFinished {
+		return
+	}
+
 	canHandle := sem.TryAcquire(1)
 	if !canHandle {
 		reportCantHandle(conn)
@@ -107,9 +115,10 @@ func getListener(port string) (net.Listener, error) {
 func processConnRequests(listener net.Listener, ctx context.Context, cancelFunc context.CancelFunc) {
 	for !serverFinished {
 		conn, err := listener.Accept()
-		if err != nil && !serverFinished {
+		if err != nil {
 			logger.Warn("Can't open client connection: " + err.Error())
 		} else {
+			wg.Add(1)
 			go handleNewConnRequest(conn, ctx, cancelFunc)
 		}
 	}
@@ -137,6 +146,7 @@ func main() {
 
 	select {
 	case <-ctx.Done():
+		wg.Wait()
 		fmt.Println("Bye")
 	}
 }
