@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/sync/semaphore"
 )
@@ -52,6 +53,8 @@ func handleNewConnRequest(conn net.Conn, ctx context.Context, cancelFunc context
 					}
 					reading = true
 				}()
+			} else {
+				time.Sleep(time.Millisecond * 500)
 			}
 		}
 	}
@@ -104,7 +107,7 @@ func getListener(port string) (net.Listener, error) {
 func processConnRequests(listener net.Listener, ctx context.Context, cancelFunc context.CancelFunc) {
 	for !serverFinished {
 		conn, err := listener.Accept()
-		if err != nil {
+		if err != nil && !serverFinished {
 			logger.Warn("Can't open client connection: " + err.Error())
 		} else {
 			go handleNewConnRequest(conn, ctx, cancelFunc)
@@ -132,11 +135,8 @@ func main() {
 
 	go processConnRequests(listener, ctx, cancelFunc)
 
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println("Bye")
-			return
-		}
+	select {
+	case <-ctx.Done():
+		fmt.Println("Bye")
 	}
 }
