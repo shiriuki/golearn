@@ -33,7 +33,6 @@ func handleNewConnRequest(conn net.Conn, ctx context.Context, cancelFunc context
 	for serving {
 		select {
 		case <-ctx.Done():
-			reportClosingHandler(conn)
 			return
 		default:
 			if reading {
@@ -75,9 +74,7 @@ func handleMsgFromClient(conn net.Conn) (closeClient bool, closeServer bool, err
 }
 
 func reportClosingHandler(conn net.Conn) {
-	if !serverFinished {
-		logger.Info("Closing handler " + conn.RemoteAddr().String())
-	}
+	logger.Info("Closing handler " + conn.RemoteAddr().String())
 }
 
 func reportHandlerServing(conn net.Conn) {
