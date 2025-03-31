@@ -25,10 +25,6 @@ func handleNewConnRequest(conn net.Conn, ctx context.Context, cancelFunc context
 	defer wg.Done()
 	defer conn.Close()
 
-	if serverFinished {
-		return
-	}
-
 	canHandle := sem.TryAcquire(1)
 	if !canHandle {
 		reportCantHandle(conn)
@@ -113,13 +109,15 @@ func getListener(port string) (net.Listener, error) {
 }
 
 func processConnRequests(listener net.Listener, ctx context.Context, cancelFunc context.CancelFunc) {
-	for !serverFinished {
+	for {
 		conn, err := listener.Accept()
-		if err != nil {
-			logger.Warn("Can't open client connection: " + err.Error())
-		} else {
-			wg.Add(1)
-			go handleNewConnRequest(conn, ctx, cancelFunc)
+		if !serverFinished {
+			if err != nil {
+				logger.Warn("Can't open client connection: " + err.Error())
+			} else {
+				wg.Add(1)
+				go handleNewConnRequest(conn, ctx, cancelFunc)
+			}
 		}
 	}
 }
