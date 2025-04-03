@@ -1,3 +1,11 @@
+// This application was developed while learning how to program in Go.
+// This is a basic echo server that allows a maximum number of concurrent
+// clients. These clients can connect using netcat to the port the server
+// is listing. Then the clients will receive back whatever text they sent.
+// If they send STOP they will be disconnected, if they send EXIT, they will
+// terminate the server and will terminate other clients as well. If a client
+// want to connect and the number maximum number of clients has been reach,
+// their connection will be refused.
 package main
 
 import (
@@ -15,6 +23,7 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
+// Defines the maximum number of concurrent clients.
 const MAX_CONCURRENT_CLIENTS = 2
 
 var sem = semaphore.NewWeighted(int64(MAX_CONCURRENT_CLIENTS))
