@@ -18,7 +18,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"golang.org/x/sync/semaphore"
 )
@@ -41,43 +40,40 @@ func handleNewConnRequest(conn net.Conn, ctx context.Context, cancelFunc context
 	}
 	defer sem.Release(1)
 	reportHandlerServing(conn)
-	serving := true
-	reading := true
 
-	for serving {
+	input := make(chan string, 1)
+	go getInput(conn, input)
+
+	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-			if reading {
-				reading = false
-				go func() {
-					closeClient, closeServer, err := handleMsgFromClient(conn)
-					if err != nil && !serverFinished {
-						logger.Warn(err.Error())
-					} else if closeClient {
-						reportClosingHandler(conn)
-						serving = false
-						return
-					} else if closeServer {
-						serverFinished = true
-						cancelFunc()
-						return
-					}
-					reading = true
-				}()
-			} else {
-				time.Sleep(time.Millisecond * 500)
+		case msg := <-input:
+			closeClient, closeServer, err := handleMsgFromClient(conn, msg)
+			if err != nil && !serverFinished {
+				logger.Warn(err.Error())
+			} else if closeClient {
+				reportClosingHandler(conn)
+				return
+			} else if closeServer {
+				serverFinished = true
+				cancelFunc()
+				return
 			}
+			go getInput(conn, input)
 		}
 	}
 }
 
-func handleMsgFromClient(conn net.Conn) (closeClient bool, closeServer bool, error error) {
+func getInput(conn net.Conn, input chan string) {
 	msg, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		return false, false, errors.New("Couldn't read message from client " + err.Error())
+	if err != nil && !serverFinished {
+		logger.Warn("couldn't read message from client " + conn.RemoteAddr().Network() + ". Error: " + err.Error())
 	}
+	input <- msg
+}
+
+func handleMsgFromClient(conn net.Conn, msg string) (closeClient bool, closeServer bool, error error) {
 	if strings.TrimSpace(string(msg)) == "STOP" {
 		return true, false, nil
 	}
