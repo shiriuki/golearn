@@ -113,16 +113,16 @@ func getListener(port string) (net.Listener, error) {
 	return listener, nil
 }
 
-func processConnRequests(ctx context.Context, listener net.Listener, cancelFunc context.CancelFunc) {
+func getNewConnReq(listener net.Listener, connReqs chan net.Conn) {
 	for {
 		conn, err := listener.Accept()
-		if !serverFinished {
-			if err != nil {
+		if err != nil {
+			if !serverFinished {
 				logger.Warn("Can't open client connection: " + err.Error())
-			} else {
-				wg.Add(1)
-				go handleNewConnRequest(ctx, conn, cancelFunc)
 			}
+		} else {
+			connReqs <- conn
+			return
 		}
 	}
 }
@@ -145,11 +145,19 @@ func main() {
 	ctx, cancelFunc := context.WithCancel(ctx)
 	defer cancelFunc()
 
-	go processConnRequests(ctx, listener, cancelFunc)
+	connReqs := make(chan net.Conn, 1)
+	go getNewConnReq(listener, connReqs)
 
-	select {
-	case <-ctx.Done():
-		wg.Wait()
-		fmt.Println("Bye")
+	for {
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			fmt.Println("Bye")
+			return
+		case connReq := <-connReqs:
+			wg.Add(1)
+			go handleNewConnRequest(ctx, connReq, cancelFunc)
+			go getNewConnReq(listener, connReqs)
+		}
 	}
 }
