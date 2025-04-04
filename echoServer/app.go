@@ -29,7 +29,7 @@ var sem = semaphore.NewWeighted(int64(MAX_CONCURRENT_CLIENTS))
 var wg sync.WaitGroup
 var serverFinished = false
 
-func handleNewConnRequest(conn net.Conn, ctx context.Context, cancelFunc context.CancelFunc) {
+func handleNewConnRequest(ctx context.Context, conn net.Conn, cancelFunc context.CancelFunc) {
 	defer wg.Done()
 	defer conn.Close()
 
@@ -113,7 +113,7 @@ func getListener(port string) (net.Listener, error) {
 	return listener, nil
 }
 
-func processConnRequests(listener net.Listener, ctx context.Context, cancelFunc context.CancelFunc) {
+func processConnRequests(ctx context.Context, listener net.Listener, cancelFunc context.CancelFunc) {
 	for {
 		conn, err := listener.Accept()
 		if !serverFinished {
@@ -121,7 +121,7 @@ func processConnRequests(listener net.Listener, ctx context.Context, cancelFunc 
 				logger.Warn("Can't open client connection: " + err.Error())
 			} else {
 				wg.Add(1)
-				go handleNewConnRequest(conn, ctx, cancelFunc)
+				go handleNewConnRequest(ctx, conn, cancelFunc)
 			}
 		}
 	}
@@ -145,7 +145,7 @@ func main() {
 	ctx, cancelFunc := context.WithCancel(ctx)
 	defer cancelFunc()
 
-	go processConnRequests(listener, ctx, cancelFunc)
+	go processConnRequests(ctx, listener, cancelFunc)
 
 	select {
 	case <-ctx.Done():
